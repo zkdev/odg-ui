@@ -33,33 +33,32 @@ import { hasUserAccess, normaliseExtraIdentity } from '../util'
 
 const POLL_INTERVAL_MS = 10000
 
-const SUPPORTED_ACCESS_TYPES_BY_MODE = {
-  syft: ['ociRegistry'],
-  bdba: ['ociRegistry', 'localBlob/v1', 's3'],
+const SUPPORTED_ACCESS_TYPES = [
+  'ociRegistry',
+  'localBlob/v1',
+  's3',
+]
+
+const SUPPORTED_ARTEFACT_TYPES_BY_ACCESS_TYPE = {
+  'ociRegistry': ['ociImage', 'ociArtifact'],
+  'localBlob/v1': ['directoryTree', 'executable'],
+  's3': ['application/tar', 'application/x-tar'],
 }
 
-const SUPPORTED_ARTEFACT_TYPES_BY_MODE = {
-  syft: ['ociImage', 'directoryTree'],
-  // bdba: no artefact type restriction
-}
-
-const isResourceSupported = (resource, generationMode) => {
+const isResourceSupported = (resource) => {
   const accessType = resource?.access?.type
   const artefactType = resource?.type
 
-  const supportedAccessTypes = SUPPORTED_ACCESS_TYPES_BY_MODE[generationMode]
-  if (supportedAccessTypes && 
-      accessType &&
-      !supportedAccessTypes.includes(accessType))
-    return false
+  if (accessType && !SUPPORTED_ACCESS_TYPES.includes(accessType)) return false
 
-  const supportedArtefactTypes = SUPPORTED_ARTEFACT_TYPES_BY_MODE[generationMode]
-  if (
-    supportedArtefactTypes &&
-    artefactType &&
-    !supportedArtefactTypes.includes(artefactType)
-  )
-    return false
+  if (accessType && artefactType) {
+    const supportedArtefactTypes = SUPPORTED_ARTEFACT_TYPES_BY_ACCESS_TYPE[accessType]
+
+    if (
+      supportedArtefactTypes
+      && !supportedArtefactTypes.find((type) => artefactType.startsWith(type))
+    ) return false
+  }
 
   return true
 }
@@ -85,19 +84,10 @@ const SbomDownloadPopover = ({
 
   const artefacts = React.useMemo(() => {
     if (!bom?.componentDependencies) return null
-    return bom.componentDependencies.flatMap((c) =>
-      c.resources.map((resource) => ({
-        component_name: c.name,
-        component_version: c.version,
-        artefact_kind: ARTEFACT_KIND.RESOURCE,
-        artefact: {
-          artefact_name: resource.name,
-          artefact_version: resource.version,
-          artefact_type: resource.type,
-          artefact_extra_id: resource.extraIdentity,
-        },
-      })),
-    )
+    return bom.componentDependencies.map((component) => ({
+      component_name: component.name,
+      component_version: component.version,
+    }))
   }, [bom])
 
   const types = React.useMemo(() => {
@@ -125,7 +115,7 @@ const SbomDownloadPopover = ({
 
     const componentReadiness = bom.componentDependencies.flatMap((c) =>
       c.resources.map((resource) => {
-        const isSupported = isResourceSupported(resource, generationMode)
+        const isSupported = isResourceSupported(resource)
 
         const hasScan =
           isSupported &&
@@ -142,20 +132,26 @@ const SbomDownloadPopover = ({
           )
 
         return {
-          name: resource.name,
-          version: resource.version,
-          accessType: resource?.access?.type,
-          artefactType: resource?.type,
-          extraIdentity: resource.extraIdentity,
-          component: `${c.name}:${c.version}`,
+          accessType: resource.access?.type,
           ready: hasScan,
           supported: isSupported,
+          componentArtefactId: {
+            component_name: c.name,
+            component_version: c.version,
+            artefact_kind: ARTEFACT_KIND.RESOURCE,
+            artefact: {
+              artefact_name: resource.name,
+              artefact_version: resource.version,
+              artefact_type: resource.type,
+              artefact_extra_id: resource.extraIdentity,
+            },
+          },
         }
       }),
     )
 
     return componentReadiness
-  }, [bom, scanInfos, generationMode])
+  }, [bom, scanInfos])
 
   const readyComponents = sbomReadiness?.filter((c) => c.ready) ?? []
   const notReadyComponents = sbomReadiness?.filter((c) => !c.ready && c.supported) ?? []
@@ -189,23 +185,19 @@ const SbomDownloadPopover = ({
   const isDisabled = isLoading || isTriggering || isPolling
   const isClosable = !isLoading && !isTriggering
 
-  const toListItem = (r) => ({
-    primary: `${r.name}:${r.version}`,
-    secondary: `${r.accessType ? `${r.accessType}` : ''}${r.artefactType ? ` · ${r.artefactType}` : ''}`,
-    component: r.component,
-  })
+  const toListItem = (r) => {
+    const artefactId = r.componentArtefactId.artefact
+    return {
+      primary: `${artefactId.artefact_name}:${artefactId.artefact_version}`,
+      secondary: `${r.accessType ? `${r.accessType}` : ''}${artefactId.artefact_type ? ` · ${artefactId.artefact_type}` : ''}`,
+      component: `${r.componentArtefactId.component_name}:${r.componentArtefactId.component_version}`,
+    }
+  }
 
   const triggerSbomGeneration = async () => {
     if (!artefacts || notReadyComponents.length === 0) return
 
-    const notReadyKeys = new Set(
-      notReadyComponents.map((r) => `${r.component}:${r.name}:${r.version}:${r.artefactType}:${normaliseExtraIdentity(r.extraIdentity)}`),
-    )
-    const backlogArtefacts = artefacts.filter((a) =>
-      notReadyKeys.has(
-        `${a.component_name}:${a.component_version}:${a.artefact.artefact_name}:${a.artefact.artefact_version}:${a.artefact.artefact_type}:${normaliseExtraIdentity(a.artefact.artefact_extra_id)}`,
-      ),
-    )
+    const backlogArtefacts = notReadyComponents.map((notReadyComponent) => notReadyComponent.componentArtefactId)
 
     setIsTriggering(true)
     try {
