@@ -172,10 +172,7 @@ const rescoringIdentity = (rescoring) => {
 const rescoringNeedsComment = (rescoring) => {
   return (
     rescoring.matching_rules.includes(META_RESCORING_RULES.CUSTOM_RESCORING)
-    && (
-      rescoring.severity !== rescoring.originalSeverityProposal
-      || rescoring.due_date !== rescoring.originalDueDate
-    ) && !rescoring.comment
+    && !rescoring.comment
   )
 }
 
@@ -3663,10 +3660,6 @@ const RescoringModal = ({
     // input and the due date has changed
     return (
       selectedRescorings.find((r) => rescoringIdentity(r) === rescoringIdentity(rescoring))
-      && (
-        rescoring.severity !== categoriseRescoringProposal({rescoring, findingCfg}).id
-        || rescoring.due_date !== rescoring.originalDueDate
-      )
     )
   })
   const filteredOutRescoringsLength = filteredRescorings ? selectedRescorings.length - allowedRescorings.length : 0
