@@ -169,10 +169,11 @@ const rescoringIdentity = (rescoring) => {
 }
 
 
-const rescoringNeedsComment = (rescoring) => {
+const rescoringNeedsComment = (rescoring, isSelected = true) => {
   return (
     rescoring.matching_rules.includes(META_RESCORING_RULES.CUSTOM_RESCORING)
     && !rescoring.comment
+    && isSelected
   )
 }
 
@@ -2668,7 +2669,7 @@ const RescoringContentTableRow = ({
             defaultValue={rescoring.comment}
             onChange={(e) => delayRescoringUpdate({comment: e.target.value})}
             onClick={(e) => e.stopPropagation()}
-            error={rescoringNeedsComment(rescoring)}
+            error={rescoringNeedsComment(rescoring, Boolean(selectedRescorings.find((r) => rescoringIdentity(r) === rescoringIdentity(rescoring))))}
             size='small'
             maxRows={4}
             InputProps={{
@@ -3439,7 +3440,7 @@ const Rescore = ({
     Apply Rescoring
   </Button>
 
-  const customRescoringsWithoutComment = rescorings.filter(rescoringNeedsComment)
+  const customRescoringsWithoutComment = rescorings.filter(r => rescoringNeedsComment(r, true))
 
   if (customRescoringsWithoutComment.length > 0) return <Tooltip
     title={
@@ -3656,8 +3657,7 @@ const RescoringModal = ({
   }, [setSprints, rescoringsForType])
 
   const allowedRescorings = filteredRescorings?.filter((rescoring) => {
-    // only rescorings are allowed iff their severity has changed OR they allow a custom due date
-    // input and the due date has changed
+    // only rescorings are allowed iff they are selected and not filtered out
     return (
       selectedRescorings.find((r) => rescoringIdentity(r) === rescoringIdentity(rescoring))
     )
@@ -3856,7 +3856,7 @@ const RescoringModal = ({
             filteredOutRescoringsLength > 0 && <Tooltip
               title={
                 `${filteredOutRescoringsLength} ${pluralise('rescoring', filteredOutRescoringsLength, 'is', 'are')}
-                filtered out or the categorisation did not change`
+                filtered out`
               }
             >
               <InfoOutlinedIcon sx={{ height: '1rem' }}/>
